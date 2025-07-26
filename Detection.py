@@ -1,77 +1,93 @@
-import math
-import threading
-
 import cv2
-from ultralytics import YOLO
-
+import numpy as np
+from EmailSending import send_event
 from HumanDetection import age_detect
 
-# start webcam
-cap = cv2.VideoCapture(0)
-cap.set(3, 640)
-cap.set(4, 480)
+# Load YOLOv3 model
+net = cv2.dnn.readNet("yolov3_training_2000.weights", "yolov3_testing.cfg")
+classes = ["Weapon"]
 
-# model
-model = YOLO("yolo-Weights/yolov8n.pt")
+# Get output layer names
+output_layer_names = net.getUnconnectedOutLayersNames()
+colors = np.random.uniform(0, 255, size=(len(classes), 3))
 
-# object classes
-classNames = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat",
-              "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
-              "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
-              "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat",
-              "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-              "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli",
-              "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed",
-              "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone",
-              "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
-              "teddy bear", "hair drier", "toothbrush", "weapon"
-              ]
+# Function to get input source (file or webcam)
+def value():
+    val = input("Enter file name or press enter to start webcam: \n")
+    if val == "":
+        val = 0
+    return val
 
-def capture_detected():
+def capture_detected(video_recorder):
+    # Initialize video capture
+    cap = cv2.VideoCapture(value())
+    
     while True:
-
         success, img = cap.read()
-        results = model(img, stream=True)
-
-        # if success:
-        #     sendImage(img)
-
-        # coordinates
-        for r in results:
-            boxes = r.boxes
-
-            for box in boxes:
-                # bounding box
-                x1, y1, x2, y2 = box.xyxy[0]
-                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2) # convert to int values
-
-                # put box in cam
-                cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 255), 3)
-
-                # confidence
-                confidence = math.ceil((box.conf[0]*100))/100
-                print("Confidence --->",confidence)
-
-                # class name
-                cls = int(box.cls[0])
-                print("Class name -->", classNames[cls])
-
-                # object details
-                org = [x1, y1]
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                fontScale = 1
-                color = (255, 0, 0)
-                thickness = 2
-
-                cv2.putText(img, classNames[cls], org, font, fontScale, color, thickness)
-
-                if classNames[cls] == 'cell phone':
-                    name = classNames[cls] + '.png'
-                    cv2.imwrite(name, img)
-                    age_detect.set()
-
-        cv2.imshow('Webcam', img)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if not success:
+            print("Error: Failed to read a frame from the video source.")
             break
+        
+        height, width, channels = img.shape
+
+        # Prepare image for YOLO
+        blob = cv2.dnn.blobFromImage(img, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+        net.setInput(blob)
+        outs = net.forward(output_layer_names)
+
+        # Process detections
+        class_ids = []
+        confidences = []
+        boxes = []
+        for out in outs:
+            for detection in out:
+                scores = detection[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+                if confidence > 0.5:
+                    # Calculate bounding box coordinates
+                    center_x = int(detection[0] * width)
+                    center_y = int(detection[1] * height)
+                    w = int(detection[2] * width)
+                    h = int(detection[3] * height)
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+
+                    boxes.append([x, y, w, h])
+                    confidences.append(float(confidence))
+                    class_ids.append(class_id)
+
+        # Apply Non-Max Suppression
+        indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+        
+        # Draw bounding boxes and labels
+        if len(indexes) > 0:
+            print("Weapon detected in frame")
+            # Save frame for age detection
+            cv2.imwrite("cell phone.png", img)
+            age_detect.set()  # Trigger age detection
+            video_recorder.start_recording_event()  # Start video recording
+            
+        font = cv2.FONT_HERSHEY_PLAIN
+        for i in range(len(boxes)):
+            if i in indexes:
+                x, y, w, h = boxes[i]
+                label = str(classes[class_ids[i]])
+                color = colors[class_ids[i]]
+                cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
+                cv2.putText(img, label, (x, y + 30), font, 3, color, 3)
+
+        # Pass frame to video recorder
+        video_recorder.write_frame(img)
+        
+        # Display the frame
+        cv2.imshow("Weapon Detection", img)
+        
+        # Break loop on 'Esc' key
+        if cv2.waitKey(1) == 27:
+            video_recorder.stop_recording()
+            break
+
+    # Release resources
     cap.release()
     cv2.destroyAllWindows()

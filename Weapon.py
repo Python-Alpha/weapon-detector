@@ -1,37 +1,81 @@
-# Import necessary libraries
 import cv2
 import numpy as np
-from tensorflow import keras
 
-# Load the pre-trained model from the HDF5 file
-model = keras.models.load_model('gun_model.h5')
+# Load YOLOv3 model
+net = cv2.dnn.readNet("yolov3_training_2000.weights", "yolov3_testing.cfg")
+classes = ["Weapon"]
 
-# Load an image for detection
-image_path = 'gun.jpg'
-image = cv2.imread(image_path)
-image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # OpenCV loads images in BGR, convert to RGB
+# Get output layer names
+output_layer_names = net.getUnconnectedOutLayersNames()
+colors = np.random.uniform(0, 255, size=(len(classes), 3))
 
-# Resize the image to match the input size of the model
-input_shape = model.input_shape[1:3]  # Assuming the model's input shape is (height, width, channels)
-resized_image = cv2.resize(image, (input_shape[1], input_shape[0]))
+# Function to get input source (file or webcam)
+def value():
+    val = input("Enter file name or press enter to start webcam: \n")
+    if val == "":
+        val = 0
+    return val
 
-# Normalize the image to match the preprocessing used during training
-normalized_image = resized_image / 255.0  # Assuming the model was trained with values in the range [0, 255]
+# Initialize video capture
+cap = cv2.VideoCapture(value())
 
-# Expand the dimensions to create a batch of size 1
-input_image = np.expand_dims(normalized_image, axis=0)
+while True:
+    success, img = cap.read()
+    if not success:
+        print("Error: Failed to read a frame from the video source.")
+        break
+    
+    height, width, channels = img.shape
 
-# Make predictions using the model
-predictions = model.predict(input_image)
+    # Prepare image for YOLO
+    blob = cv2.dnn.blobFromImage(img, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+    outs = net.forward(output_layer_names)
 
-# Process the predictions as needed for your specific task (e.g., object detection)
-# This may involve extracting bounding box coordinates, class scores, etc.
+    # Process detections
+    class_ids = []
+    confidences = []
+    boxes = []
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            if confidence > 0.5:
+                # Calculate bounding box coordinates
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
 
-# Example: Print the class probabilities
-print("Class Probabilities:", predictions)
+                boxes.append([x, y, w, h])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
 
-# Example: Extract bounding box coordinates
-box_coordinates = predictions[0][:, :4]  # Assuming the bounding box coordinates are in the first 4 elements
-print("Bounding Box Coordinates:", box_coordinates)
+    # Apply Non-Max Suppression
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+    
+    # Draw bounding boxes and labels
+    if len(indexes) > 0:
+        print("Weapon detected in frame")
+    font = cv2.FONT_HERSHEY_PLAIN
+    for i in range(len(boxes)):
+        if i in indexes:
+            x, y, w, h = boxes[i]
+            label = str(classes[class_ids[i]])
+            color = colors[class_ids[i]]
+            cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
+            cv2.putText(img, label, (x, y + 30), font, 3, color, 3)
 
-cv2.imshow('Webcam', image)
+    # Display the frame
+    cv2.imshow("Weapon Detection", img)
+    
+    # Break loop on 'Esc' key
+    if cv2.waitKey(1) == 27:
+        break
+
+# Release resources
+cap.release()
+cv2.destroyAllWindows()
