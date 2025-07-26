@@ -46,7 +46,7 @@ Detection Details:
         # Add body to email
         message.attach(MIMEText(body, "plain"))
 
-        filename = 'cell phone.png'
+        filename = 'source/weapon.png'
 
         try:
             # Open image file in binary mode

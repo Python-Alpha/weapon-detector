@@ -12,7 +12,7 @@ def age_detection():
 
         try:
             # Read image for analysis
-            img = cv2.imread("cell phone.png")
+            img = cv2.imread("source/weapon.png")
             if img is None:
                 print("Error: Could not read image for age detection")
                 continue
