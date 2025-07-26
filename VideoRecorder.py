@@ -31,7 +31,7 @@ class VideoRecorder:
 
             # Initialize video writer
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"weapon_detection_{timestamp}.avi"
+            output_filename = f"video/weapon_detection_{timestamp}.avi"
             fourcc = cv2.VideoWriter_fourcc(*'XVID')
             self.out = cv2.VideoWriter(output_filename, fourcc, 20.0, (640, 480))
             self.recording = True

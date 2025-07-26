@@ -64,7 +64,7 @@ def capture_detected(video_recorder):
         if len(indexes) > 0:
             print("Weapon detected in frame")
             # Save frame for age detection
-            cv2.imwrite("cell phone.png", img)
+            cv2.imwrite("source/weapon.png", img)
             age_detect.set()  # Trigger age detection
             video_recorder.start_recording_event()  # Start video recording
             
